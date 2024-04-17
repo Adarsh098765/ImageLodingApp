@@ -31,8 +31,7 @@ class ImageLayoutViewModel @Inject constructor(private val repository: Repositor
                 response.collect { it ->
                     when (it.status) {
                         Resource.Status.SUCCESS -> {
-                            val filteredList = it.data?.filter { it.mediaType ==2 }
-                            Log.i(TAG, "fetchImageData: "+filteredList)
+                            val filteredList = it.data?.filter { !it.coverageURL.isNullOrBlank() }
                             _imageData.value = filteredList
                         }
 

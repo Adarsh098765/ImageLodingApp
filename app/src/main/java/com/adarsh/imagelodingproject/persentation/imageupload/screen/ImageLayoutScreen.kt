@@ -37,6 +37,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,7 +68,7 @@ fun ImageLayoutScreen(viewModel: ImageLayoutViewModel = hiltViewModel()) {
                         imageUrl = imageItem.coverageURL.toString(),
                         contentDescription = imageItem.title,
                         modifier = Modifier.fillMaxSize(),
-                        error = { Log.e(TAG, "ImageLayoutScreen: $it") },
+                        error = { Text(text = it, fontSize = 10.sp) },
                         placeholder = {
                             ShimmerEffect(
                                 modifier = Modifier.fillMaxSize()

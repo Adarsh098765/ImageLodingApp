@@ -56,7 +56,10 @@ fun ImageLoader.AsyncImage(
         errorMessage = ""
         bitmap = try {
             withContext(Dispatchers.IO) {
-                loadImage(imageUrl)
+                loadImage(imageUrl){
+                       hasError = true
+                       errorMessage = it 
+                }
             }
         } catch (e: IOException) {
             e.printStackTrace()
@@ -104,18 +107,19 @@ Finally, the function displays the appropriate UI element based on the current s
 
 3. **loadImage()**:
 ```kotlin
-private suspend fun loadImage(imageUrl: String): Bitmap? {
-    Log.d(TAG, "loadImage: Attempting to load image from $imageUrl")
-    return try {
-        memoryCache.get(imageUrl)
-            ?: getDiskCachedBitmap(imageUrl)?.also { memoryCache.put(imageUrl, it) }
-            ?: fetchImageFromUrl(imageUrl)?.also { memoryCache.put(imageUrl, it); saveToDiskCache(imageUrl, it) }
-    } catch (e: Exception) {
-        Log.e(TAG, "loadImage: Exception - ${e.message}")
-        e.printStackTrace()
-        null
+    private suspend fun loadImage(imageUrl: String,error: ((String) -> Unit)?): Bitmap? {
+        Log.d(TAG, "loadImage: Attempting to load image from $imageUrl")
+        return try {
+            memoryCache.get(imageUrl)
+                ?: getDiskCachedBitmap(imageUrl)?.also { memoryCache.put(imageUrl, it) }
+                ?: fetchImageFromUrl(imageUrl)?.also { memoryCache.put(imageUrl, it); saveToDiskCache(imageUrl, it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "loadImage: Exception - ${e.message}")
+            error?.invoke(e.message.toString())
+            e.printStackTrace()
+            null
+        }
     }
-}
 ```
 The `loadImage()` function is responsible for loading an image from the memory cache, disk cache, or the network. It follows these steps:
 
@@ -144,21 +148,40 @@ The function uses the `withContext(Dispatchers.IO)` block to perform the disk I/
 
 5. **fetchImageFromUrl()**:
 ```kotlin
-private suspend fun fetchImageFromUrl(imageUrl: String): Bitmap? {
+    private suspend fun fetchImageFromUrl(imageUrl: String): Bitmap {
     return withContext(Dispatchers.IO) {
         try {
             val connection = URL(imageUrl).openConnection() as HttpURLConnection
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
             connection.connect()
-            val inputStream = connection.inputStream
-            BitmapFactory.decodeStream(inputStream)
+
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+
+                val contentType = connection.contentType
+                if (contentType != null && contentType.startsWith("image/")) {
+                    val inputStream = connection.inputStream
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
+                        bitmap
+                    } else {
+                        throw Exception("Invalid image data")
+                    }
+                } else {
+                    throw Exception("Unsupported image format")
+                }
+            } else {
+                throw Exception("HTTP error code: ${connection.responseCode}")
+            }
         } catch (e: IOException) {
             e.printStackTrace()
             Log.e(TAG, "fetchImageFromUrl: $imageUrl - ${e.message}")
-            null
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             Log.e(TAG, "fetchImageFromUrl: $imageUrl - ${e.message}")
-            null
+            throw e
         }
     }
 }
@@ -175,7 +198,7 @@ private fun saveToDiskCache(imageUrl: String, bitmap: Bitmap) {
     val cacheFile = File(getCacheDirectory(), getCacheFileName(imageUrl))
     try {
         FileOutputStream(cacheFile).use { outputStream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
             outputStream.flush()
         }
     } catch (e: IOException) {

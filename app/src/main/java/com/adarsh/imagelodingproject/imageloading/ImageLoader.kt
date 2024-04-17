@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import com.adarsh.imagelodingproject.ImageLoadingApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -30,14 +31,12 @@ object ImageLoader {
     private const val DISK_CACHE_DIRECTORY = "image_cache"
     private val memoryCache = LruCache<String, Bitmap>(MAX_MEMORY_CACHE_SIZE)
 
-
-
     fun init() {
         initDiskCache()
     }
 
     private fun initDiskCache() {
-        val cacheDir = File(ContextProvider.context?.cacheDir, DISK_CACHE_DIRECTORY)
+        val cacheDir = File(ImageLoadingApplication.instance.cacheDir, DISK_CACHE_DIRECTORY)
         cacheDir.mkdirs()
     }
 
@@ -60,7 +59,10 @@ object ImageLoader {
             errorMessage = ""
             bitmap = try {
                 withContext(Dispatchers.IO) {
-                    loadImage(imageUrl)
+                    loadImage(imageUrl){
+                        hasError = true
+                        errorMessage = it
+                    }
                 }
             } catch (e: IOException) {
                 e.printStackTrace()
@@ -93,7 +95,7 @@ object ImageLoader {
         }
     }
 
-    private suspend fun loadImage(imageUrl: String): Bitmap? {
+    private suspend fun loadImage(imageUrl: String,error: ((String) -> Unit)?): Bitmap? {
         Log.d(TAG, "loadImage: Attempting to load image from $imageUrl")
         return try {
             memoryCache.get(imageUrl)
@@ -101,6 +103,7 @@ object ImageLoader {
                 ?: fetchImageFromUrl(imageUrl)?.also { memoryCache.put(imageUrl, it); saveToDiskCache(imageUrl, it) }
         } catch (e: Exception) {
             Log.e(TAG, "loadImage: Exception - ${e.message}")
+            error?.invoke(e.message.toString())
             e.printStackTrace()
             null
         }
@@ -118,21 +121,40 @@ object ImageLoader {
         }
     }
 
-    private suspend fun fetchImageFromUrl(imageUrl: String): Bitmap? {
+    private suspend fun fetchImageFromUrl(imageUrl: String): Bitmap {
         return withContext(Dispatchers.IO) {
             try {
                 val connection = URL(imageUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
                 connection.connect()
-                val inputStream = connection.inputStream
-                BitmapFactory.decodeStream(inputStream)
+
+
+                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+
+                    val contentType = connection.contentType
+                    if (contentType != null && contentType.startsWith("image/")) {
+                        val inputStream = connection.inputStream
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
+                            bitmap
+                        } else {
+                            throw Exception("Invalid image data")
+                        }
+                    } else {
+                        throw Exception("Unsupported image format")
+                    }
+                } else {
+                    throw Exception("HTTP error code: ${connection.responseCode}")
+                }
             } catch (e: IOException) {
                 e.printStackTrace()
                 Log.e(TAG, "fetchImageFromUrl: $imageUrl - ${e.message}")
-                null
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 Log.e(TAG, "fetchImageFromUrl: $imageUrl - ${e.message}")
-                null
+                throw e
             }
         }
     }
@@ -141,7 +163,7 @@ object ImageLoader {
         val cacheFile = File(getCacheDirectory(), getCacheFileName(imageUrl))
         try {
             FileOutputStream(cacheFile).use { outputStream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
                 outputStream.flush()
             }
         } catch (e: IOException) {
@@ -151,7 +173,7 @@ object ImageLoader {
     }
 
     private fun getCacheDirectory(): File {
-        val cacheDir = File(ContextProvider.context?.cacheDir, DISK_CACHE_DIRECTORY)
+        val cacheDir = File(ImageLoadingApplication.instance.cacheDir, DISK_CACHE_DIRECTORY)
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()
         }
@@ -161,10 +183,6 @@ object ImageLoader {
     private fun getCacheFileName(imageUrl: String): String {
         return imageUrl.hashCode().toString()
     }
-}
-
-object ContextProvider {
-    var context: Context? = null
 }
 
 

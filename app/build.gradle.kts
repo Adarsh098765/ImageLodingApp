@@ -19,7 +19,7 @@ android {
         versionName = "1.0"
 
         //load the values from .properties file
-        val keystoreFile = project.rootProject.file("local.properties")
+        val keystoreFile = project.rootProject.file("api.properties")
         val properties = Properties()
         properties.load(keystoreFile.inputStream())
 
